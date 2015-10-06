@@ -79,15 +79,43 @@ fn main() {
     let mut vm = VM::new();
 
     let istrn_regex = Regex::new(r"^(\d+): ").unwrap();
+    let halt_regex = Regex::new(r"^halt$").unwrap();
+    let pass_regex = Regex::new(r"^pass$").unwrap();
+    let goto_regex = Regex::new(r"^goto (\d+)$").unwrap();
+    let read_regex = Regex::new(r"^read\((\d+)\)$").unwrap();
+    let write_regex = Regex::new(r"^write\((\d+)\)$").unwrap();
+    let assignment_regex = Regex::new(r"^Mem\[(\d+)\]:= (Mem\[(\d+)\])((\+|-)(Mem\[(\d+)\]))*$").unwrap();
+    let if_regex = Regex::new(r"^if (Mem\[(\d+)\])(>|<|=){1}={0,1} (\d+|Mem\[(\d+)\]) then goto \d$");
 
     f.read_to_string(&mut program);
     for line in program.lines() {
         pc = pc + 1;
         let l = line.trim().to_lowercase();
-        println!("Parsing Istruction: {}",l);
-        let istrn = istrn_regex.captures(&l).unwrap().at(1).unwrap_or("-1").parse::<i32>().unwrap();
+        println!("({}) Parsing Istruction: {}",pc,l);
+        let istrs = istrn_regex.captures(&l).unwrap().at(1).unwrap_or("-1");
+        let istrn = istrs.parse::<i32>().unwrap();
         if istrn != pc {
             println!("ISTRUCTION: {} HAS INVALID NUMBER",l);
+            break;
+        }
+
+        let istr : &str = & istrn_regex.replace_all(line,"");
+        println!("({}) Processing: {}",pc,istr);
+        if halt_regex.is_match(&istr) {
+            vm.code.push(Istruction { istruction: Istructions::Halt });   
+        } else if pass_regex.is_match(&istr) {
+            vm.code.push(Istruction { istruction: Istructions::Pass });
+        } else if goto_regex.is_match(&istr) {
+            let to = goto_regex.captures(&istr).unwrap().at(1).unwrap().parse::<i32>().unwrap();
+            vm.code.push(Istruction { istruction: Istructions::Jump { to: to } });
+        } else if write_regex.is_match(&istr) {
+            let to = write_regex.captures(&istr).unwrap().at(1).unwrap().parse::<i32>().unwrap();
+            vm.code.push(Istruction { istruction: Istructions::Write { index: to } });
+        } else if read_regex.is_match(&istr) {
+            let to = read_regex.captures(&istr).unwrap().at(1).unwrap().parse::<i32>().unwrap();
+            vm.code.push(Istruction { istruction: Istructions::Read { index: to } });
+        } else {
+            println!("({}) UNKNOWN ISTRUCTION: {}",pc,istr);
             break;
         }
     }
