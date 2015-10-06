@@ -10,6 +10,7 @@ fn readInt() -> i32 {
     string as i32
 }
 
+#[derive(Debug)]
 enum Istructions {
     Assignment { index: i32, value: i32 },
     Jump { to: i32 },
@@ -85,7 +86,9 @@ fn main() {
     let read_regex = Regex::new(r"^read\((\d+)\)$").unwrap();
     let write_regex = Regex::new(r"^write\((\d+)\)$").unwrap();
     let assignment_regex = Regex::new(r"^Mem\[(\d+)\]:= (Mem\[(\d+)\])((\+|-)(Mem\[(\d+)\]))*$").unwrap();
-    let if_regex = Regex::new(r"^if (Mem\[(\d+)\])(>|<|=){1}={0,1} (\d+|Mem\[(\d+)\]) then goto \d$");
+    let if_regex = Regex::new(r"^if (Mem\[(?P<a>\d+)\]) (?P<o>>|<|=){1}(?P<p>={0,1}) (?P<b>\d+|Mem\[\d+\]) then goto (?P<t>\d+)$").unwrap();
+
+    let mem_regex = Regex::new(r"^Mem[(\d+)]$").unwrap();
 
     f.read_to_string(&mut program);
     for line in program.lines() {
@@ -101,22 +104,38 @@ fn main() {
 
         let istr : &str = & istrn_regex.replace_all(line,"");
         println!("({}) Processing: {}",pc,istr);
-        if halt_regex.is_match(&istr) {
+        if halt_regex.is_match(&istr) { // HALT
             vm.code.push(Istruction { istruction: Istructions::Halt });   
-        } else if pass_regex.is_match(&istr) {
+        } else if pass_regex.is_match(&istr) { // PASS
             vm.code.push(Istruction { istruction: Istructions::Pass });
-        } else if goto_regex.is_match(&istr) {
+        } else if goto_regex.is_match(&istr) { // GOTO
             let to = goto_regex.captures(&istr).unwrap().at(1).unwrap().parse::<i32>().unwrap();
             vm.code.push(Istruction { istruction: Istructions::Jump { to: to } });
-        } else if write_regex.is_match(&istr) {
+        } else if write_regex.is_match(&istr) { // WRITE
             let to = write_regex.captures(&istr).unwrap().at(1).unwrap().parse::<i32>().unwrap();
             vm.code.push(Istruction { istruction: Istructions::Write { index: to } });
-        } else if read_regex.is_match(&istr) {
+        } else if read_regex.is_match(&istr) { // READ
             let to = read_regex.captures(&istr).unwrap().at(1).unwrap().parse::<i32>().unwrap();
             vm.code.push(Istruction { istruction: Istructions::Read { index: to } });
-        } else {
+        } else if if_regex.is_match(&istr) { // IF
+            let a = if_regex.replace_all(istr,"$a").parse::<i32>().unwrap();
+            let b_str = if_regex.replace_all(istr,"$b");
+            let b = match mem_regex.is_match(&b_str) {
+                true => mem_regex.captures(&b_str).unwrap().at(1).unwrap().parse::<i32>().unwrap(),
+                false => b_str.parse::<i32>().unwrap()
+            };
+            let op_str = if_regex.replace_all(istr,"$o$p");
+            let jmp = if_regex.replace_all(istr,"$t").parse::<i32>().unwrap();
+            vm.code.push(Istruction { istruction: Istructions::If { a: a, b: b, condition: 0, jump: jmp } });
+        } else if assignment_regex.is_match(&istr) { // ASSIGN
+              
+        } else { // UNKNOWN
             println!("({}) UNKNOWN ISTRUCTION: {}",pc,istr);
             break;
         }
+    }
+    println!("--- ISTRUCTIONS");
+    for istr in vm.code {
+        println!("{:?}",istr.istruction);
     }
 }
