@@ -1,0 +1,7 @@
+[package]
+name = "vm"
+version = "0.1.0"
+authors = ["Enrico Fasoli <fazius2009@gmail.com>"]
+
+[dependencies]
+regex = "0.1.41"
