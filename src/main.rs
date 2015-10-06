@@ -1,5 +1,8 @@
 extern crate regex;
 use regex::Regex;
+use std::io::Read;
+use std::fs::File;
+use std::str::FromStr;
 
 fn readInt() -> i32 {
     let mut input = String::new();
@@ -11,6 +14,7 @@ enum Istructions {
     Assignment { index: i32, value: i32 },
     Jump { to: i32 },
     Halt,
+    Pass,
     Write { index: i32 },
     Read { index: i32 },
     If { a: i32, condition: i32, b: i32, jump: i32 }
@@ -23,6 +27,7 @@ struct Istruction {
 impl Istruction {
     fn execute(&self,pc: &i32,mem: &mut Vec<i32>) -> i32 {
         match self.istruction {
+            Istructions::Pass => pc + 1,
             Istructions::Jump { to } => to,
             Istructions::Write { index } => {
                 println!("Output: {}",mem[index as usize]);
@@ -68,5 +73,22 @@ impl VM {
 }
 
 fn main() {
-    
+    let mut f = File::open("program.txt").ok().expect("Error opening file");
+    let mut program = String::new();
+    let mut pc = 0;
+    let mut vm = VM::new();
+
+    let istrn_regex = Regex::new(r"^(\d+): ").unwrap();
+
+    f.read_to_string(&mut program);
+    for line in program.lines() {
+        pc = pc + 1;
+        let l = line.trim().to_lowercase();
+        println!("Parsing Istruction: {}",l);
+        let istrn = istrn_regex.captures(&l).unwrap().at(1).unwrap_or("-1").parse::<i32>().unwrap();
+        if istrn != pc {
+            println!("ISTRUCTION: {} HAS INVALID NUMBER",l);
+            break;
+        }
+    }
 }
