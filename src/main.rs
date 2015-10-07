@@ -183,8 +183,8 @@ fn main() {
     let goto_regex = Regex::new(r"^goto (\d+)$").unwrap();
     let read_regex = Regex::new(r"^read\((\d+)\)$").unwrap();
     let write_regex = Regex::new(r"^write\((\d+)\)$").unwrap();
-    let assign_regex = Regex::new(r"^Mem\[(?P<t>\d+)\][ ]*:=[ ]*(?P<a>\d+|Mem\[\d+\])[ ]*(?P<o>\+|-)([ ]*(?P<b>\d+|Mem\[\d+\])){0,1}$").unwrap();
-    let if_regex = Regex::new(r"^if (?P<a>\d+|Mem\[\d+\]) (?P<o>>|<|=){1}(?P<p>={0,1}) (?P<b>\d+|Mem\[\d+\]) then goto (?P<t>\d+)$").unwrap();
+    let assign_regex = Regex::new(r"^Mem\[(?P<t>\d+)\][ ]*:=[ ]*(?P<a>\d+|Mem\[\d+\])([ ]*(?P<o>\+|-)([ ]*(?P<b>\d+|Mem\[\d+\]))){0,1}$").unwrap();
+    let if_regex = Regex::new(r"^if (?P<a>\d+|Mem\[\d+\])[ ]*(?P<o>>|<|=){1}(?P<p>={0,1})[ ]*(?P<b>\d+|Mem\[\d+\]) then goto (?P<t>\d+)$").unwrap();
 
     let mem_regex = Regex::new(r"^Mem\[(\d+)\]$").unwrap();
     let num_regex = Regex::new(r"^\d+$").unwrap();
@@ -240,7 +240,8 @@ fn main() {
             let oper = match op {
                 "+" => Operators::Plus { arg: b },
                 "-" => Operators::Minus { arg: b },
-                 _  => panic!("Wat")
+                ""  => Operators::Plus { arg: Refs::Literal { value: 0 } },
+                 _  => panic!("Invalid operator")
             };
             code.push(Istruction { istruction: Istructions::Assignment { index: target, value: a, operator: oper } });
         } else { // UNKNOWN
