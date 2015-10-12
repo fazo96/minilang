@@ -26,7 +26,6 @@ enum Refs {
 fn conv(string: &str,regex : &Regex, mem: &mut Vec<i32>) -> Refs {
     match regex.is_match(&string) {
         true => {
-            println!("{}\n{}",string,regex.replace_all(string,"$v").replace("@","").replace("*",""));
             let i = regex.replace_all(string,"$v")
                     .replace("@","")
                     .replace("*","")
@@ -36,7 +35,6 @@ fn conv(string: &str,regex : &Regex, mem: &mut Vec<i32>) -> Refs {
             // (now) so it is done at runtime.
             while mem.len() <= (i as usize) {
                 mem.push(0);
-                println!("mem.len() is now {}",mem.len());
             }
             let t = regex.replace_all(string,"$t");
             if t == "*" {
@@ -144,12 +142,12 @@ fn find_label(arg: &String, code: &Vec<Istruction>) -> i32 {
 
 impl Istruction {
     fn execute(&self,pc: &i32,mem: &mut Vec<i32>,code: &Vec<Istruction>) -> i32 {
-        println!("Executing: {:?}",self.istruction);
+        println!("({}) executing istruction: {:?}",pc,self.istruction);
         match &self.istruction {
             &Istructions::Pass => pc + 1,
             &Istructions::Jump { ref to } => find_label(&to,&code),
             &Istructions::Write { index } => {
-                println!("Output: {}",mem[index as usize]);
+                println!("> {}",mem[index as usize]);
                 return pc + 1;
             },
             &Istructions::Halt => -1,
@@ -175,18 +173,16 @@ impl Istruction {
                     },
                     &Refs::Memory { index } => index
                 };
-                println!("Dereffing target: {:?} to {}",target,i);
                 if i < 0 {
                     panic!("Can't assign to Literal value!!!");
                 }
                 mem[i as usize] = r;
-                println!("Stored {} in {}",r,i);
+                println!("({}) Stored {} in {}",pc,r,i);
                 return pc + 1;
             },
             &Istructions::Read { index } => {
                 let i = read_int();
                 mem[index as usize] = i;
-                println!("Stored {} in {}",i,index as usize);
                 return pc + 1;
             },
             &Istructions::If { ref a, ref condition, ref b, ref jump, ref else_jump } => {
@@ -238,7 +234,6 @@ impl VM {
         self.pc = 1;
         while self.pc >= 1 {
            if (self.pc as usize) > self.code.len() { break; }
-           println!("Running instruction: {}",self.pc);
            self.pc = self.code[(self.pc - 1) as usize].execute(&self.pc,&mut self.mem, &self.code); 
         }
     }
@@ -289,7 +284,6 @@ impl VM {
             false => None
         };
         let istr : &str = & istrn_regex.replace_all(line,"");
-        println!("({}) Processing: {}",self.pc,istr);
         if halt_regex.is_match(&istr) { // HALT
             self.code.push(Istruction { label: label, istruction: Istructions::Halt });
         } else if pass_regex.is_match(&istr) { // PASS
@@ -345,7 +339,8 @@ impl VM {
     fn load_program(&mut self, program : &str) -> bool {
         self.pc = 0;
         let mut fatal_error = false;
-        for line in program.lines() {
+        let iterator = program.lines().map(|x| x.trim() ).filter(|x| !x.starts_with("#"));
+        for line in iterator {
             self.pc = self.pc + 1;
             if !self.load_istruction(line) {
                 fatal_error = true;
