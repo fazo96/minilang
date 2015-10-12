@@ -8,7 +8,7 @@ use std::str::FromStr;
 use std::option::Option;
 use std::num::ParseIntError;
 
-fn readInt() -> i32 {
+fn read_int() -> i32 {
     let stdin = io::stdin();
     let mut string = String::new();
     stdin.read_line(&mut string);
@@ -17,26 +17,37 @@ fn readInt() -> i32 {
 
 #[derive(Debug)]
 enum Refs {
+    Literal { value: i32 },
     Memory { index: i32 },
-    Literal { value: i32 }
+    Pointer { index: i32 }
 }
 
-// Takes out i32 from a wrapper, like "Mem[10]"
+// Takes out i32 from a wrapper, like "*10" and "@10"
 fn conv(string: &str,regex : &Regex, mem: &mut Vec<i32>) -> Refs {
     match regex.is_match(&string) {
         true => {
-            let i = regex.captures(string).unwrap().at(1).unwrap().parse::<i32>().unwrap();
+            println!("{}\n{}",string,regex.replace_all(string,"$v").replace("@","").replace("*",""));
+            let i = regex.replace_all(string,"$v")
+                    .replace("@","")
+                    .replace("*","")
+                    .parse::<i32>().unwrap();
+            // Make sure the memory is big enough to allow that index to be
+            // accessed. For Pointers, memory allocation can't be done at parse-time
+            // (now) so it is done at runtime.
             while mem.len() <= (i as usize) {
                 mem.push(0);
                 println!("mem.len() is now {}",mem.len());
             }
-            Refs::Memory { 
-                index: i
+            let t = regex.replace_all(string,"$t");
+            if t == "*" {
+                Refs::Pointer { index: i }
+            } else {
+                Refs::Memory { index: i }
             }
         },
         false => match string.parse::<i32>() {
             Ok(v) => Refs::Literal { value: v },
-            Err(e) => Refs::Literal { value: 0 }
+            Err(e) => Refs::Literal { value: -1 }
         }
     }
 }
@@ -74,7 +85,7 @@ enum Operators {
 
 #[derive(Debug)]
 enum Istructions {
-    Assignment { index: i32, value: Refs, operator: Operators },
+    Assignment { target: Refs, value: Refs, operator: Operators },
     Jump { to: String },
     Halt,
     Pass,
@@ -90,13 +101,22 @@ struct Istruction {
 
 fn deref(arg : &Refs, mem : &Vec<i32>) -> i32 {
     match arg {
-        &Refs::Memory { index } => {
+        &Refs::Pointer { index } => {
             let a : usize = index as usize;
             match mem.get(a) {
                 Some(x) => {
-                    let y : i32 = * x;
-                    y
+                    match mem.get(*x as usize) {
+                        Some(y) => * y,
+                        None => 0
+                    }
                 },
+                None => 0
+            }
+        },
+        &Refs::Memory { index } => {
+            let a : usize = index as usize;
+            match mem.get(a) {
+                Some(x) => * x,
                 None => 0
             }
         },
@@ -133,7 +153,7 @@ impl Istruction {
                 return pc + 1;
             },
             &Istructions::Halt => -1,
-            &Istructions::Assignment { ref index, ref value, ref operator } => {
+            &Istructions::Assignment { ref target, ref value, ref operator } => {
                 let a = deref(value,&mem);
                 let r = match operator {
                     &Operators::Plus { ref arg } =>  a + deref(&arg,&mem),
@@ -143,13 +163,28 @@ impl Istruction {
                     &Operators::Modulo { ref arg } => a % deref(&arg,&mem),
                     &Operators::ElevatedTo { ref arg } => a.pow(deref(&arg,&mem) as u32),
                 };
-                let i = (*index) as usize;
-                mem[i] = r;
+                let i = match target {
+                    &Refs::Literal { value } => -1,
+                    &Refs::Pointer { index } => {
+                        let p = Refs::Memory { index: index };
+                        let v = deref(&p,&mem);
+                        while mem.len() <= v as usize {
+                            mem.push(0)
+                        }
+                        v
+                    },
+                    &Refs::Memory { index } => index
+                };
+                println!("Dereffing target: {:?} to {}",target,i);
+                if i < 0 {
+                    panic!("Can't assign to Literal value!!!");
+                }
+                mem[i as usize] = r;
                 println!("Stored {} in {}",r,i);
                 return pc + 1;
             },
             &Istructions::Read { index } => {
-                let i = readInt();
+                let i = read_int();
                 mem[index as usize] = i;
                 println!("Stored {} in {}",i,index as usize);
                 return pc + 1;
@@ -198,6 +233,7 @@ impl VM {
             pc: 0
         }
     }
+    // Enters the runtime and runs the program loaded in this VM
     fn run(&mut self) {
         self.pc = 1;
         while self.pc >= 1 {
@@ -206,89 +242,120 @@ impl VM {
            self.pc = self.code[(self.pc - 1) as usize].execute(&self.pc,&mut self.mem, &self.code); 
         }
     }
-    fn load_program(&mut self, program : &str) {
+    // Parse and append a single istruction on the istruction list
+    fn load_istruction(&mut self, line: &str) -> bool {
         let istrn_regex = Regex::new(r"^(\w+): ").unwrap();
         let halt_regex = Regex::new(r"^halt$").unwrap();
         let pass_regex = Regex::new(r"^pass$").unwrap();
         let goto_regex = Regex::new(r"^goto (\w+)$").unwrap();
         let read_regex = Regex::new(r"^read\((\d+)\)$").unwrap();
         let write_regex = Regex::new(r"^write\((\d+)\)$").unwrap();
-        let assign_regex = Regex::new(r"^Mem\[(?P<t>\d+)\][ ]*:=[ ]*(?P<a>\d+|Mem\[\d+\])([ ]*(?P<o>\+|-|%|/|\^|\*)([ ]*(?P<b>\d+|Mem\[\d+\]))){0,1}$").unwrap();
-        let if_regex = Regex::new(r"^if[ ]*(?P<a>\d+|Mem\[\d+\])[ ]*(?P<o>>|<|=){1}(?P<p>={0,1})[ ]*(?P<b>\d+|Mem\[\d+\])[ ]*then[ ]*goto[ ]*(?P<t>\w+)[ ]*(else[ ]*goto[ ]*(?P<e>\w+)){0,1}$").unwrap();
+        let assign_regex = Regex::new(r"(?x)
+            ^(?P<t>(\*|@)(\d+)) # Destination
+            [:space:]*
+            := # Assignment
+            [:space:]*
+            (?P<a>\d+|((\*|@)\d+)) # First Argument
+            [:space:]*
+            (?P<o>\+|-|%|/|\^|\*) # Operator
+            ([:space:]*
+               (?P<b>\d+|((\*|@)\d+)) # ASecond Argument
+            ){0,1}$").unwrap();
+        let if_regex = Regex::new(r"(?x)
+            ^if[:space:]*
+            (?P<a>\d+|((\*|@)(\d+))) # First Argument
+            [:space:]*
+            (?P<o>>|<|=){1} (?P<p>={0,1})
+            [:space:]*
+            (?P<b>\d+|((\*|@)\d+)) # Second Argument
+            [:space:]*then[:space:]*goto[:space:]*
+            (?P<t>\w+) # Target
+            [:space:]*
+            (else[:space:]*goto[:space:]*(?P<e>\w+)){0,1}$").unwrap();
 
-        let mem_regex = Regex::new(r"^Mem\[(\d+)\]$").unwrap();
+        let mem_regex = Regex::new(r"^(?P<t>\*|@)(?P<v>\d+)$").unwrap();
 
+        let mut successful = true;
+        let l = line.trim().to_lowercase();
+        println!("({}) Parsing Istruction: {}",self.pc,l);
+        let label : Option<String> = match istrn_regex.is_match(&l) {
+            true => match istrn_regex.captures(&l).unwrap().at(1) {
+                Some(x) => {
+                    println!("({}) label \"{}\" has been set",self.pc,x);
+                    Some(String::from(x))
+                },
+                None => None
+            },
+            false => None
+        };
+        let istr : &str = & istrn_regex.replace_all(line,"");
+        println!("({}) Processing: {}",self.pc,istr);
+        if halt_regex.is_match(&istr) { // HALT
+            self.code.push(Istruction { label: label, istruction: Istructions::Halt });
+        } else if pass_regex.is_match(&istr) { // PASS
+            self.code.push(Istruction { label: label, istruction: Istructions::Pass });
+        } else if goto_regex.is_match(&istr) { // GOTO
+            let to = String::from(goto_regex.captures(&istr).unwrap().at(1).unwrap());
+            self.code.push(Istruction { label: label, istruction: Istructions::Jump { to: to } });
+        } else if write_regex.is_match(&istr) { // WRITE
+            let to = write_regex.captures(&istr).unwrap().at(1).unwrap().parse::<i32>().unwrap();
+            self.code.push(Istruction { label: label, istruction: Istructions::Write { index: to } });
+        } else if read_regex.is_match(&istr) { // READ
+            let to = read_regex.captures(&istr).unwrap().at(1).unwrap().parse::<i32>().unwrap();
+            self.code.push(Istruction { label: label, istruction: Istructions::Read { index: to } });
+        } else if if_regex.is_match(&istr) { // IF
+            let a_str = if_regex.replace_all(istr,"$a");
+            let b_str = if_regex.replace_all(istr,"$b");
+            let a = conv(&a_str,&mem_regex,&mut self.mem);
+            let b = conv(&b_str,&mem_regex,&mut self.mem);
+            let op_str : &str = & if_regex.replace_all(istr,"$o$p");
+            let oper = get_operator(&op_str);
+            let jmp = String::from(if_regex.replace_all(istr,"$t"));
+            let else_txt : &str = & if_regex.replace_all(istr,"$e");
+            let else_jmp = match else_txt {
+                "" => None,
+                x => Some(String::from(x))
+            };
+            self.code.push(Istruction { label: label, istruction: Istructions::If { a: a, b: b, condition: oper, jump: jmp, else_jump: else_jmp } });
+        } else if assign_regex.is_match(&istr) { // ASSIGN
+            let target = conv(&assign_regex.replace_all(istr,"$t"),&mem_regex,&mut self.mem);
+            let a_str = assign_regex.replace_all(istr,"$a");
+            let b_str = assign_regex.replace_all(istr,"$b");
+            let a = conv(&a_str,&mem_regex,&mut self.mem);
+            let op : &str = & assign_regex.replace_all(istr,"$o");
+            let b = conv(&b_str,&mem_regex,&mut self.mem);
+            let oper = match op {
+                "+" => Operators::Plus { arg: b },
+                "-" => Operators::Minus { arg: b },
+                "*" => Operators::Times { arg: b },
+                "/" => Operators::DividedBy { arg: b },
+                "^" => Operators::ElevatedTo { arg: b },
+                "%" => Operators::Modulo { arg: b },
+                ""  => Operators::Plus { arg: Refs::Literal { value: 0 } },
+                 _  => panic!("Invalid operator")
+            };
+            self.code.push(Istruction { label: label, istruction: Istructions::Assignment { target: target, value: a, operator: oper } });
+        } else { // UNKNOWN
+            println!("({}) UNKNOWN ISTRUCTION: {}",self.pc,istr);
+            successful = false;
+        }
+        successful
+    }
+    // Parse a string containing a program and store it in this VM
+    fn load_program(&mut self, program : &str) -> bool {
         self.pc = 0;
+        let mut fatal_error = false;
         for line in program.lines() {
             self.pc = self.pc + 1;
-            let l = line.trim().to_lowercase();
-            println!("({}) Parsing Istruction: {}",self.pc,l);
-            let label : Option<String> = match istrn_regex.is_match(&l) {
-                true => match istrn_regex.captures(&l).unwrap().at(1) {
-                    Some(x) => {
-                        println!("({}) label \"{}\" has been set",self.pc,x);
-                        Some(String::from(x))
-                    },
-                    None => None
-                },
-                false => None
-            };
-            let istr : &str = & istrn_regex.replace_all(line,"");
-            println!("({}) Processing: {}",self.pc,istr);
-            if halt_regex.is_match(&istr) { // HALT
-                self.code.push(Istruction { label: label, istruction: Istructions::Halt });   
-            } else if pass_regex.is_match(&istr) { // PASS
-                self.code.push(Istruction { label: label, istruction: Istructions::Pass });
-            } else if goto_regex.is_match(&istr) { // GOTO
-                let to = String::from(goto_regex.captures(&istr).unwrap().at(1).unwrap());
-                self.code.push(Istruction { label: label, istruction: Istructions::Jump { to: to } });
-            } else if write_regex.is_match(&istr) { // WRITE
-                let to = write_regex.captures(&istr).unwrap().at(1).unwrap().parse::<i32>().unwrap();
-                self.code.push(Istruction { label: label, istruction: Istructions::Write { index: to } });
-            } else if read_regex.is_match(&istr) { // READ
-                let to = read_regex.captures(&istr).unwrap().at(1).unwrap().parse::<i32>().unwrap();
-                self.code.push(Istruction { label: label, istruction: Istructions::Read { index: to } });
-            } else if if_regex.is_match(&istr) { // IF
-                let a_str = if_regex.replace_all(istr,"$a");
-                let b_str = if_regex.replace_all(istr,"$b");
-                let a = conv(&a_str,&mem_regex,&mut self.mem);
-                let b = conv(&b_str,&mem_regex,&mut self.mem);
-                let op_str : &str = & if_regex.replace_all(istr,"$o$p");
-                let oper = get_operator(&op_str);
-                let jmp = String::from(if_regex.replace_all(istr,"$t"));
-                let else_txt : &str = & if_regex.replace_all(istr,"$e");
-                let else_jmp = match else_txt {
-                    "" => None,
-                    x => Some(String::from(x))
-                };
-                self.code.push(Istruction { label: label, istruction: Istructions::If { a: a, b: b, condition: oper, jump: jmp, else_jump: else_jmp } });
-            } else if assign_regex.is_match(&istr) { // ASSIGN
-                let target = assign_regex.replace_all(istr,"$t").parse::<i32>().unwrap();
-                while self.mem.len() <= (target as usize) {
-                    self.mem.push(0);
-                    println!("mem.len() is now {}",self.mem.len());
-                }
-                let a_str = assign_regex.replace_all(istr,"$a");
-                let b_str = assign_regex.replace_all(istr,"$b");
-                let a = conv(&a_str,&mem_regex,&mut self.mem);
-                let op : &str = & assign_regex.replace_all(istr,"$o");
-                let b = conv(&b_str,&mem_regex,&mut self.mem);
-                let oper = match op {
-                    "+" => Operators::Plus { arg: b },
-                    "-" => Operators::Minus { arg: b },
-                    "*" => Operators::Times { arg: b },
-                    "/" => Operators::DividedBy { arg: b },
-                    "^" => Operators::ElevatedTo { arg: b },
-                    "%" => Operators::Modulo { arg: b },
-                    ""  => Operators::Plus { arg: Refs::Literal { value: 0 } },
-                     _  => panic!("Invalid operator")
-                };
-                self.code.push(Istruction { label: label, istruction: Istructions::Assignment { index: target, value: a, operator: oper } });
-            } else { // UNKNOWN
-                println!("({}) UNKNOWN ISTRUCTION: {}",self.pc,istr);
+            if !self.load_istruction(line) {
+                fatal_error = true;
                 break;
-            }
+            };
         }
+        if fatal_error {
+            println!("EXITING: FATAL ERROR");
+        }
+        !fatal_error
     }
 }
 
@@ -299,8 +366,9 @@ fn main() {
             let mut program = String::new();
             let mut vm = VM::new();
             f.read_to_string(&mut program);
-            vm.load_program(&program);
-            vm.run()
+            if vm.load_program(&program) {
+                vm.run()
+            }
         },
         None => {
             println!("Usage: {} <filepath>",env::args().nth(0).unwrap())
