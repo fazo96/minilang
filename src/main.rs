@@ -147,7 +147,7 @@ impl Istruction {
             &Istructions::Pass => pc + 1,
             &Istructions::Jump { ref to } => find_label(&to,&code),
             &Istructions::Write { index } => {
-                println!("> {}",mem[index as usize]);
+                println!("Output > {}",mem[index as usize]);
                 return pc + 1;
             },
             &Istructions::Halt => -1,
@@ -239,7 +239,7 @@ impl VM {
     }
     // Parse and append a single istruction on the istruction list
     fn load_istruction(&mut self, line: &str) -> bool {
-        let istrn_regex = Regex::new(r"^(\w+): ").unwrap();
+        let istrn_regex = Regex::new(r"^(\w+):[ ]*").unwrap();
         let halt_regex = Regex::new(r"^halt$").unwrap();
         let pass_regex = Regex::new(r"^pass$").unwrap();
         let goto_regex = Regex::new(r"^goto (\w+)$").unwrap();
@@ -251,9 +251,9 @@ impl VM {
             := # Assignment
             [:space:]*
             (?P<a>\d+|((\*|@)\d+)) # First Argument
-            [:space:]*
-            (?P<o>\+|-|%|/|\^|\*) # Operator
             ([:space:]*
+            (?P<o>\+|-|%|/|\^|\*) # Operator
+            [:space:]*
                (?P<b>\d+|((\*|@)\d+)) # ASecond Argument
             ){0,1}$").unwrap();
         let if_regex = Regex::new(r"(?x)
@@ -284,10 +284,10 @@ impl VM {
             false => None
         };
         let istr : &str = & istrn_regex.replace_all(line,"");
-        if halt_regex.is_match(&istr) { // HALT
-            self.code.push(Istruction { label: label, istruction: Istructions::Halt });
-        } else if pass_regex.is_match(&istr) { // PASS
+        if istr.len() == 0 || pass_regex.is_match(&istr) { // PASS
             self.code.push(Istruction { label: label, istruction: Istructions::Pass });
+        } else if halt_regex.is_match(&istr) { // HALT
+            self.code.push(Istruction { label: label, istruction: Istructions::Halt });
         } else if goto_regex.is_match(&istr) { // GOTO
             let to = String::from(goto_regex.captures(&istr).unwrap().at(1).unwrap());
             self.code.push(Istruction { label: label, istruction: Istructions::Jump { to: to } });
@@ -339,7 +339,12 @@ impl VM {
     fn load_program(&mut self, program : &str) -> bool {
         self.pc = 0;
         let mut fatal_error = false;
-        let iterator = program.lines().map(|x| x.trim() ).filter(|x| !x.starts_with("#"));
+        let iterator = program.lines().map(|x|
+                if x.trim().starts_with("#") {
+                    "pass"
+                } else {
+                    x.split("#").nth(0).unwrap().trim()
+                });
         for line in iterator {
             self.pc = self.pc + 1;
             if !self.load_istruction(line) {
