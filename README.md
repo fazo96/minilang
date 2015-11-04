@@ -13,7 +13,7 @@ Here is a program showing the istruction set:
 @1 := 42
 # it puts the number 42 in the memory cell 1. 0 is the first memory cell.
 # This prints to stdout the value in the cell 1 (42)
-write(42)
+write(1)
 # This reads a line from stdin, converts it to an integer and
 # puts into in the "4" cell
 read(4)
@@ -36,19 +36,20 @@ goto start
 @2 := @1 + 10
 # Only one operation allowed per assignment. These operators are implemented
 # + - * / % ^
-# ^ is the power operator. 2^3 is 8.
+# ^ is the power operator. 2^3 is 8. It only works with exponents >= 0
 
 # Conditions
 if @1 > 5 then goto start
 # You have these operators: > < >= <= = ==
 # The = operator and == are the same
+# Only the "goto" istruction is available after a "then"
 
 # You can freely indent your code, like this:
           indented: pass
 
 # The halt istruction immediately stops program execution
 halt
-# The execution also stops at EOF and jumps targeted at non existing labels.
+# The execution also stops at EOF and gotos targeted at non existing labels.
 ```
 
 The program doesn't work because of infinite loops, but it shows the istruction set just fine.
